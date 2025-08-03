@@ -9,7 +9,7 @@ import { donationConfig } from '~/config/donations'
 const isExtensionContextValid = () => {
   try {
     return typeof browser !== 'undefined' && browser.runtime && browser.runtime.id;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -19,15 +19,14 @@ const copiedItemId = ref<string | null>(null)
 const currentCoppiedClipboard = async (content: string, id: string) => {
   try {
     if (!isExtensionContextValid()) {
-      console.warn('Extension context invalidated, cannot copy to clipboard');
       return;
     }
     await navigator.clipboard.writeText(content)
     // Set the copied item ID
     copiedItemId.value = id
   }
-  catch (error) {
-    console.error('Failed to copy to clipboard:', error)
+  catch {
+    // Handle clipboard error silently
   }
 }
 
@@ -36,44 +35,33 @@ const search = ref('')
 
 // Watch for changes in clipboardHistory and update local state
 watch(() => clipboardHistory.value, (newHistory) => {
-  console.log('ClipboardHistory component: clipboardHistory changed:', newHistory)
   if (newHistory) {
     history.value = { ...newHistory }
-    console.log('Updated local history:', history.value)
   }
 }, { deep: true })
 
 onMounted(async() => {
-  console.log('ClipboardHistory component mounted')
-  
   // This function forces a fresh read from storage
   const currentHistory = loadHistory()
-  console.log('Initial history loaded:', currentHistory)
   
   // Assign to local state
   history.value = { ...currentHistory }
-  console.log('Set initial history:', history.value)
 
   try {
     const response = await sendMessage('get-clipboard-history', {}) as unknown as { history: ClipboardHistory }
-    console.log('Received history from background:', response)
     if (response && response.history && Array.isArray(response.history.items)) {
       history.value = response.history
-      console.log('Updated history from background:', history.value)
     }
-  } catch (e) {
-    console.error('Failed to fetch initial clipboard history:', e)
+  } catch {
+    // Handle error silently
   }
 
   // Set up runtime message listener for real-time updates
-  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('ClipboardHistory component: Received runtime message:', message)
+  browser.runtime.onMessage.addListener((message) => {
     if (message.type === 'clipboard-updated' && message.data) {
-      console.log('Received runtime clipboard-updated message:', message.data)
       const historyData = message.data as { history: ClipboardHistory }
       if (historyData.history && Array.isArray(historyData.history.items)) {
         history.value = historyData.history
-        console.log('Updated history from runtime message:', historyData.history)
       }
     }
   })
@@ -81,7 +69,6 @@ onMounted(async() => {
 
 const items = computed(() => {
   const arr = Array.isArray(history.value?.items) ? history.value.items : []
-  console.log('Computed items:', arr.length, 'items')
   if (!search.value) return arr
   return arr.filter(item => item.content.toLowerCase().includes(search.value.toLowerCase()))
 })
@@ -94,39 +81,32 @@ interface ClipboardUpdateMessage {
 
 // Enhanced message listener for clipboard updates
 onMessage('clipboard-updated', ({ data }) => {
-  console.log('ClipboardHistory component: Received clipboard-updated message:', data)
   if (data) {
     const message = data as unknown as ClipboardUpdateMessage
     if (message.history && Array.isArray(message.history.items)) {
       history.value = message.history
-      console.log('Updated history from message:', message.history)
-    } else {
-      console.error('Received invalid history data:', message)
     }
   }
 })
 
 // Handle sync operations
 onMessage('sync-operation', ({ data }) => {
-  console.log('ClipboardHistory component: Received sync-operation message:', data)
   if (data && data.operation) {
     handleSyncOperation(data.operation)
     // Update local history after sync operation
     history.value = { ...clipboardHistory.value }
-    console.log('Updated history from sync operation:', clipboardHistory.value)
   }
 })
 
 const copyToClipboard = async (content: string) => {
   try {
     if (!isExtensionContextValid()) {
-      console.warn('Extension context invalidated, cannot copy to clipboard');
       return;
     }
     await navigator.clipboard.writeText(content)
   }
-  catch (error) {
-    console.error('Failed to copy to clipboard:', error)
+  catch {
+    // Handle clipboard error silently
   }
 }
 
@@ -143,51 +123,45 @@ const formatDate = (timestamp: number) => {
 const handleRemoveFromHistory = async (id: string) => {
   try {
     if (!isExtensionContextValid()) {
-      console.warn('Extension context invalidated, cannot remove from history');
       return;
     }
     await removeFromHistory(id)
     // Update local state after removal
     history.value = { ...clipboardHistory.value }
-    console.log('Removed item from history:', id)
-  } catch (error) {
-    console.error('Failed to remove from history:', error)
+  } catch {
+    // Handle error silently
   }
 }
 
 const handleClearHistory = async () => {
   try {
     if (!isExtensionContextValid()) {
-      console.warn('Extension context invalidated, cannot clear history');
       return;
     }
     await clearHistory()
     // Update local state after clear
     history.value = { ...clipboardHistory.value }
-    console.log('Cleared history')
-  } catch (error) {
-    console.error('Failed to clear history:', error)
+  } catch {
+    // Handle error silently
   }
 }
 
 // Handle permission events
 const handlePermissionGranted = () => {
-  console.log('Clipboard permission granted')
+  // Permission granted
 }
 
 const handlePermissionDenied = () => {
-  console.log('Clipboard permission denied')
+  // Permission denied
 }
 
-const handlePermissionError = (error: any) => {
-  console.error('Permission request error:', error)
+const handlePermissionError = () => {
+  // Permission error
 }
 
 // Ko-fi button click handler
 const openKoFi = () => {
   const url = `https://ko-fi.com/${donationConfig.koFiUsername}`
-  console.log('Opening Ko-fi URL:', url)
-  console.log('Username from config:', donationConfig.koFiUsername)
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 </script>

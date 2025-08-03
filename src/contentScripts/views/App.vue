@@ -24,11 +24,6 @@ import ClipboardHistoryComponent from '~/components/ClipboardHistory.vue'
 // Ensure history is properly initialized with a default value if needed
 const history = ref(clipboardHistory.value || { items: [], maxItems: 50 })
 
-// Ensure items is always an array
-const items = computed(() => {
-  return Array.isArray(history.value?.items) ? history.value.items : []
-})
-
 const [show, toggle] = useToggle(false)
 
 // Listen for clipboard updates
@@ -87,20 +82,9 @@ const [show, toggle] = useToggle(false)
       transition="opacity duration-300"
       :class="show ? 'opacity-100' : 'opacity-0'"
     >
-    <main class="text-center text-gray-700 shadow-sm">
-
-
- <ClipboardHistoryComponent class="max-w-80" />
-
-  </main>
+      <main class="text-center text-gray-700 shadow-sm">
+        <ClipboardHistoryComponent class="max-w-80" />
+      </main>
     </div>
-    <button
-      class="flex w-10 h-10 rounded-full shadow cursor-pointer border-none"
-      bg="teal-600 hover:teal-700"
-      @click="toggle()"
-    >
-    <!-- <h2 title="clipbord history font-bold">CBH</h2> -->
-
-    </button>
   </div>
 </template>
