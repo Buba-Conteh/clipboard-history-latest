@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed,onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { onMessage, sendMessage } from 'webext-bridge/popup'
-import { clipboardHistory, removeFromHistory,loadHistory, clearHistory, type ClipboardHistory } from '~/logic/storage'
-// import { onMessage, sendMessage } from 'webext-bridge/content-script'
+import { clipboardHistory, removeFromHistory, loadHistory, clearHistory, type ClipboardHistory, handleSyncOperation } from '~/logic/storage'
+import PermissionRequest from './PermissionRequest.vue'
 
 // Helper function to check if extension context is still valid
 const isExtensionContextValid = () => {
@@ -12,8 +12,6 @@ const isExtensionContextValid = () => {
     return false;
   }
 }
-
-
 
 const copiedItemId = ref<string | null>(null)
 
@@ -35,28 +33,54 @@ const currentCoppiedClipboard = async (content: string, id: string) => {
 const history = ref(clipboardHistory.value || { items: [], maxItems: 50 })
 const search = ref('')
 
+// Watch for changes in clipboardHistory and update local state
+watch(() => clipboardHistory.value, (newHistory) => {
+  console.log('ClipboardHistory component: clipboardHistory changed:', newHistory)
+  if (newHistory) {
+    history.value = { ...newHistory }
+    console.log('Updated local history:', history.value)
+  }
+}, { deep: true })
+
 onMounted(async() => {
-  // This function forces a fresh read from storag
+  console.log('ClipboardHistory component mounted')
+  
+  // This function forces a fresh read from storage
   const currentHistory = loadHistory()
   console.log('Initial history loaded:', currentHistory)
   
   // Assign to local state
   history.value = { ...currentHistory }
+  console.log('Set initial history:', history.value)
 
   try {
     const response = await sendMessage('get-clipboard-history', {}) as unknown as { history: ClipboardHistory }
+    console.log('Received history from background:', response)
     if (response && response.history && Array.isArray(response.history.items)) {
       history.value = response.history
-      console.log('Initial history loaded with sync:', currentHistory)
+      console.log('Updated history from background:', history.value)
     }
   } catch (e) {
     console.error('Failed to fetch initial clipboard history:', e)
   }
 
+  // Set up runtime message listener for real-time updates
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('ClipboardHistory component: Received runtime message:', message)
+    if (message.type === 'clipboard-updated' && message.data) {
+      console.log('Received runtime clipboard-updated message:', message.data)
+      const historyData = message.data as { history: ClipboardHistory }
+      if (historyData.history && Array.isArray(historyData.history.items)) {
+        history.value = historyData.history
+        console.log('Updated history from runtime message:', historyData.history)
+      }
+    }
+  })
 })
 
 const items = computed(() => {
   const arr = Array.isArray(history.value?.items) ? history.value.items : []
+  console.log('Computed items:', arr.length, 'items')
   if (!search.value) return arr
   return arr.filter(item => item.content.toLowerCase().includes(search.value.toLowerCase()))
 })
@@ -67,14 +91,28 @@ interface ClipboardUpdateMessage {
   history: ClipboardHistory
 }
 
+// Enhanced message listener for clipboard updates
 onMessage('clipboard-updated', ({ data }) => {
+  console.log('ClipboardHistory component: Received clipboard-updated message:', data)
   if (data) {
     const message = data as unknown as ClipboardUpdateMessage
     if (message.history && Array.isArray(message.history.items)) {
       history.value = message.history
+      console.log('Updated history from message:', message.history)
     } else {
       console.error('Received invalid history data:', message)
     }
+  }
+})
+
+// Handle sync operations
+onMessage('sync-operation', ({ data }) => {
+  console.log('ClipboardHistory component: Received sync-operation message:', data)
+  if (data && data.operation) {
+    handleSyncOperation(data.operation)
+    // Update local history after sync operation
+    history.value = { ...clipboardHistory.value }
+    console.log('Updated history from sync operation:', clipboardHistory.value)
   }
 })
 
@@ -101,48 +139,72 @@ const formatDate = (timestamp: number) => {
   return new Date(timestamp).toLocaleDateString()
 }
 
-const handleRemoveFromHistory = (id: string) => {
+const handleRemoveFromHistory = async (id: string) => {
   try {
     if (!isExtensionContextValid()) {
       console.warn('Extension context invalidated, cannot remove from history');
       return;
     }
-    removeFromHistory(id)
+    await removeFromHistory(id)
+    // Update local state after removal
+    history.value = { ...clipboardHistory.value }
+    console.log('Removed item from history:', id)
   } catch (error) {
     console.error('Failed to remove from history:', error)
   }
 }
 
-const handleClearHistory = () => {
+const handleClearHistory = async () => {
   try {
     if (!isExtensionContextValid()) {
       console.warn('Extension context invalidated, cannot clear history');
       return;
     }
-    clearHistory()
+    await clearHistory()
+    // Update local state after clear
+    history.value = { ...clipboardHistory.value }
+    console.log('Cleared history')
   } catch (error) {
     console.error('Failed to clear history:', error)
   }
 }
-</script>
-<style>
 
-</style>
+// Handle permission events
+const handlePermissionGranted = () => {
+  console.log('Clipboard permission granted')
+}
+
+const handlePermissionDenied = () => {
+  console.log('Clipboard permission denied')
+}
+
+const handlePermissionError = (error: any) => {
+  console.error('Permission request error:', error)
+}
+</script>
 
 <template>
   <div class="clipboard-history bg-white rounded-xl w-full mx-auto p-0 border border-gray-100">
+    <!-- Permission Request -->
+    <PermissionRequest 
+      @permission-granted="handlePermissionGranted"
+      @permission-denied="handlePermissionDenied"
+      @permission-error="handlePermissionError"
+    />
+    
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-600 to-green-600 rounded-t-xl">
       <div class="flex items-center gap-2">
-        <!-- <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" ><rect x="4" y="4" width="16" height="16" rx="4" fill="white"/><rect x="7" y="7" width="10" height="10" rx="2" fill="#22c55e"/></svg> -->
         <span class="text-xl font-bold text-white tracking-wide">Clipboard History</span>
       </div>
       <div class="flex items-center gap-2">
-        <!-- Placeholder icons -->
-        <!-- <button class="hover:bg-green-100 p-2 rounded-full!"><svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20v-6m0 0V4m0 10H6m6 0h6"/></svg></button>
-        <button class="hover:bg-green-100 p-2 rounded-full"><svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></button>
-        <button class="hover:bg-green-100 p-2 rounded-full"><svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg></button>
-        <button class="hover:bg-green-100 p-2 rounded-full"><svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg></button> -->
+        <!-- Simple status indicator -->
+        <div class="flex items-center gap-1 text-white text-xs">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M5 13l4 4L19 7"/>
+          </svg>
+          <span>{{ items.length }} items</span>
+        </div>
       </div>
     </div>
     <!-- Search Bar -->
@@ -162,9 +224,7 @@ const handleClearHistory = () => {
             <span :title="item.content" class="truncate text-sm font-medium text-gray-800 max-w-[340px]">{{ item.content }}</span>
           </div>
           <div class="flex items-center gap-2 mt-1">
-            <!-- <span class="text-xs text-gray-400">from: {{ item.content  }}</span> -->
             <!-- <span v-if="item.source" class="text-xs text-gray-400">from: {{ item.source }}</span> -->
-            <!-- <span class="text-xs text-gray-400">ID: {{ item.id.slice(0, 6) }}</span> -->
           </div>
         </div>
         <!-- Actions -->
@@ -180,7 +240,9 @@ const handleClearHistory = () => {
     </div>
     <!-- Footer -->
     <div class="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50 rounded-b-xl">
-      <span class="text-xs text-gray-400">{{ items.length }} of {{ maxItems }} stored</span>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-gray-400">{{ items.length }} of {{ maxItems }} stored</span>
+      </div>
       <button @click="handleClearHistory" class="text-xs text-red-500 hover:text-red-700 font-semibold">Clear All</button>
     </div>
   </div>

@@ -66,6 +66,8 @@ browser.tabs.onActivated.addListener(async ({ tabId }) => {
 
 // Handle messages from content script
 onMessage('clipboard-copied', async ({ data, sender }) => {
+  console.log('Received clipboard-copied message:', data, 'from sender:', sender)
+  
   // Check if extension context is still valid
   if (!isExtensionContextValid()) {
     console.warn('Extension context invalidated, skipping clipboard operation');
@@ -74,7 +76,12 @@ onMessage('clipboard-copied', async ({ data, sender }) => {
 
   // First cast to unknown, then to our type
   const message = data as unknown as ClipboardMessage
-  if (!message?.content) return
+  if (!message?.content) {
+    console.warn('No content in clipboard message')
+    return
+  }
+
+  console.log('Processing clipboard content:', message.content)
 
   // Get tab info safely
   let source = 'Unknown source'
@@ -82,49 +89,66 @@ onMessage('clipboard-copied', async ({ data, sender }) => {
     if (sender.tabId) {
       const tab = await browser.tabs.get(sender.tabId)
       source = tab.title || 'Unknown source'
+      console.log('Source tab:', source)
     }
   } catch (error) {
     console.error('Failed to get tab info:', error)
   }
 
-  addToHistory(message.content, 'text', source)
+  // Use the enhanced addToHistory function that includes sync
+  console.log('Adding to history...')
+  await addToHistory(message.content, 'text', source)
+  console.log('Successfully added to history')
 
   // Ensure we have valid history data before sending
   const validHistory = ensureValidHistory(clipboardHistory.value)
+  console.log('Current history after update:', validHistory)
 
   // Notify popup/sidepanel about the update
   const historyData = {
     history: JSON.parse(JSON.stringify(validHistory))
   }
 
-  // Broadcast the update to all contexts
+  console.log('Broadcasting history update:', historyData)
+
+  // Broadcast to all contexts
   try {
-    // @ts-expect-error webext-bridge types are not complete
-    sendMessage('clipboard-updated', historyData, { context: 'popup' })
+    // Send to popup and sidepanel
+    await browser.runtime.sendMessage({
+      type: 'clipboard-updated',
+      data: historyData
+    })
+    console.log('Successfully sent message to popup/sidepanel')
   } catch (error) {
-    console.error('Failed to send message to popup:', error)
+    console.log('Failed to send message to popup/sidepanel:', error)
   }
 
+  // Broadcast to content scripts in all tabs
   try {
-    // @ts-expect-error webext-bridge types are not complete
-    sendMessage('clipboard-updated', historyData, { context: 'sidepanel' })
-  } catch (error) {
-    console.error('Failed to send message to sidepanel:', error)
-  }
-
-  // Also send to content script if it's listening
-  try {
-    if (sender.tabId) {
-      // @ts-expect-error webext-bridge types are not complete
-      sendMessage('clipboard-updated', historyData, { tabId: sender.tabId })
+    const tabs = await browser.tabs.query({})
+    console.log('Broadcasting to', tabs.length, 'tabs')
+    for (const tab of tabs) {
+      if (tab.id) {
+        try {
+          await browser.tabs.sendMessage(tab.id, {
+            type: 'clipboard-updated',
+            data: historyData
+          })
+          console.log('Successfully sent message to tab', tab.id)
+        } catch (error) {
+          console.log('Failed to send message to tab', tab.id, ':', error)
+        }
+      }
     }
   } catch (error) {
-    console.error('Failed to send message to content script:', error)
+    console.error('Failed to broadcast to tabs:', error)
   }
 })
 
 // Handle requests for clipboard history
 onMessage('get-clipboard-history', () => {
+  console.log('Received get-clipboard-history request')
+  
   // Check if extension context is still valid
   if (!isExtensionContextValid()) {
     console.warn('Extension context invalidated, returning empty history');
@@ -133,6 +157,7 @@ onMessage('get-clipboard-history', () => {
 
   // Ensure we have valid history data before sending
   const validHistory = ensureValidHistory(clipboardHistory.value)
+  console.log('Returning history:', validHistory)
 
   return {
     history: JSON.parse(JSON.stringify(validHistory))

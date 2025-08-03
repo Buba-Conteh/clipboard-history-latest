@@ -1,6 +1,6 @@
 {
-  "name": "Clopboard-History",
-  "displayName": "Clopboard History",
+  "name": "Clipboard-History",
+  "displayName": "Clipboard History",
   "version": "0.0.1",
   "private": true,
   "packageManager": "pnpm@9.7.1",
