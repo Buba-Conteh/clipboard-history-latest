@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { onMessage, sendMessage } from 'webext-bridge/popup'
 import { clipboardHistory, removeFromHistory, loadHistory, clearHistory, type ClipboardHistory, handleSyncOperation } from '~/logic/storage'
 import PermissionRequest from './PermissionRequest.vue'
+import { donationConfig } from '~/config/donations'
 
 // Helper function to check if extension context is still valid
 const isExtensionContextValid = () => {
@@ -181,6 +182,14 @@ const handlePermissionDenied = () => {
 const handlePermissionError = (error: any) => {
   console.error('Permission request error:', error)
 }
+
+// Ko-fi button click handler
+const openKoFi = () => {
+  const url = `https://ko-fi.com/${donationConfig.koFiUsername}`
+  console.log('Opening Ko-fi URL:', url)
+  console.log('Username from config:', donationConfig.koFiUsername)
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
 </script>
 
 <template>
@@ -205,6 +214,16 @@ const handlePermissionError = (error: any) => {
           </svg>
           <span>{{ items.length }} items</span>
         </div>
+                 <!-- Ko-fi button with heart icon -->
+         <button
+           @click="openKoFi"
+           class="ml-2 p-1.5 rounded-full hover:bg-white/20 transition-colors"
+           :title="`Support me on Ko-fi`"
+         >
+          <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+        </button>
       </div>
     </div>
     <!-- Search Bar -->
@@ -239,11 +258,14 @@ const handlePermissionError = (error: any) => {
       </div>
     </div>
     <!-- Footer -->
-    <div class="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50 rounded-b-xl">
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-gray-400">{{ items.length }} of {{ maxItems }} stored</span>
+    <div class="border-t border-gray-100 bg-gray-50 rounded-b-xl">
+      <!-- Main footer content -->
+      <div class="flex items-center justify-between px-6 py-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">{{ items.length }} of {{ maxItems }} stored</span>
+        </div>
+        <button @click="handleClearHistory" class="text-xs text-red-500 hover:text-red-700 font-semibold">Clear All</button>
       </div>
-      <button @click="handleClearHistory" class="text-xs text-red-500 hover:text-red-700 font-semibold">Clear All</button>
     </div>
   </div>
 </template>
