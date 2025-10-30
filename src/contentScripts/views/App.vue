@@ -22,9 +22,9 @@ import ClipboardHistoryComponent from '~/components/ClipboardHistory.vue'
 // }
 
 // Ensure history is properly initialized with a default value if needed
-const history = ref(clipboardHistory.value || { items: [], maxItems: 50 })
+const _history = ref(clipboardHistory.value || { items: [], maxItems: 50 })
 
-const [show, toggle] = useToggle(false)
+const [show, _toggle] = useToggle(false)
 
 // Listen for clipboard updates
 // onMessage('clipboard-updated', ({ data }) => {

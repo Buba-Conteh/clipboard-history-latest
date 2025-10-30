@@ -11,8 +11,8 @@ import logo from '~/assets/logo.svg'
 
     <!-- <input v-model="storageDemo" class="border border-gray-400 rounded px-2 py-1 mt-2"> -->
 
-    <div class="mt-4">
+    <!-- <div class="mt-4">
       Powered by Vite <pixelarticons-zap class="align-middle inline-block" />
-    </div>
+    </div> -->
   </main>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { permissionManager } from '~/logic/permissions'
 
 const showRequest = ref(false)
@@ -11,9 +11,27 @@ onMounted(async () => {
   const status = permissionManager.getPermissionStatus()
   permissionStatus.value = status.clipboard
   
-  // Show request if needed
+  // First check if permission is actually granted by testing the browser API
+  const actuallyGranted = await permissionManager.isPermissionActuallyGranted()
+  if (actuallyGranted) {
+    console.log('Permission actually granted, hiding request')
+    showRequest.value = false
+    permissionStatus.value = 'granted'
+    return
+  }
+  
+  // Only show request if we should show it
   showRequest.value = permissionManager.shouldShowPermissionRequest()
+  
+  console.log('PermissionRequest mounted - status:', status, 'shouldShow:', showRequest.value)
 })
+
+// Watch for changes in permission status
+watch(() => permissionManager.getPermissionStatus(), (status) => {
+  permissionStatus.value = status.clipboard
+  showRequest.value = permissionManager.shouldShowPermissionRequest()
+  console.log('PermissionRequest watch - status:', status, 'shouldShow:', showRequest.value)
+}, { deep: true })
 
 const requestPermission = async () => {
   try {
@@ -27,12 +45,15 @@ const requestPermission = async () => {
       emit('permission-granted')
     } else {
       permissionStatus.value = 'denied'
+      // Hide the request after denial
+      showRequest.value = false
       // Emit denied event
       emit('permission-denied')
     }
   } catch (error) {
     console.error('Failed to request permission:', error)
     permissionStatus.value = 'denied'
+    showRequest.value = false
     emit('permission-error', error)
   } finally {
     isRequesting.value = false

@@ -3,9 +3,7 @@ import { onMessage, sendMessage } from 'webext-bridge/content-script'
 import { createApp } from 'vue'
 import App from './views/App.vue'
 import { setupApp } from '~/logic/common-setup'
-import { useWebExtensionStorage } from '~/composables/useWebExtensionStorage'
 import { permissionManager } from '~/logic/permissions'
-import { log } from 'console'
 // import { storageDemo } from '~/logic/storage'
 
 // Firefox `browser.tabs.executeScript()` requires scripts return a primitive value
@@ -28,7 +26,24 @@ import { log } from 'console'
   // Initialize permission check
   const initializePermission = async () => {
     try {
-      hasClipboardPermission = await permissionManager.checkClipboardPermission()
+      // First check if permission is actually granted by testing the browser API
+      hasClipboardPermission = await permissionManager.isPermissionActuallyGranted()
+      
+      if (hasClipboardPermission) {
+        console.log('Permission actually granted, updating storage')
+        // Update storage to reflect the actual permission status
+        const status = permissionManager.getPermissionStatus()
+        if (status.clipboard !== 'granted') {
+          // Update the stored status to reflect that permission is granted
+          await permissionManager.requestClipboardPermission()
+        }
+      } else {
+        // Only check with browser if we haven't asked before
+        if (permissionManager.shouldShowPermissionRequest()) {
+          hasClipboardPermission = await permissionManager.checkClipboardPermission()
+        }
+      }
+      
       console.log('Clipboard permission status:', hasClipboardPermission)
     } catch (error) {
       console.error('Failed to check clipboard permission:', error)
@@ -44,11 +59,22 @@ import { log } from 'console'
     console.log('Copy event detected')
     
     try {
-      // Check if we have permission first
-      if (!hasClipboardPermission) {
-        console.log('No clipboard permission, requesting...')
-        // Try to get permission
-        hasClipboardPermission = await permissionManager.requestClipboardPermission()
+      // First check if permission is actually granted by testing the browser API
+      const actuallyGranted = await permissionManager.isPermissionActuallyGranted()
+      if (actuallyGranted) {
+        hasClipboardPermission = true
+        console.log('Permission actually granted, proceeding with copy event')
+      } else if (!hasClipboardPermission) {
+        console.log('No clipboard permission, checking if we should request...')
+        
+        // Only request permission if we haven't asked before
+        if (permissionManager.shouldShowPermissionRequest()) {
+          console.log('Requesting clipboard permission...')
+          hasClipboardPermission = await permissionManager.requestClipboardPermission()
+        } else {
+          console.log('Permission already requested before, respecting user choice')
+          return
+        }
         
         if (!hasClipboardPermission) {
           console.log('Clipboard permission denied, skipping copy event')
@@ -94,7 +120,7 @@ import { log } from 'console'
           if (error instanceof DOMException && error.name === 'NotAllowedError') {
             console.log('Permission denied, updating status')
             hasClipboardPermission = false
-            await permissionManager.resetPermissionStatus()
+            // Don't reset permission status here - let the user decide when to reset
           }
         }
       }, 100)
@@ -116,24 +142,39 @@ import { log } from 'console'
 
       // Check permission before reading clipboard
       if (!hasClipboardPermission) {
-        hasClipboardPermission = await permissionManager.checkClipboardPermission()
+        hasClipboardPermission = await permissionManager.isPermissionActuallyGranted()
         if (!hasClipboardPermission) {
+          console.log('No clipboard permission for paste event')
           return
         }
       }
 
-      const text = await navigator.clipboard.readText()
-      if (text) {
-        sendMessage('clipboard-pasted', { content: text })
-      }
+      // Small delay to ensure clipboard is updated
+      setTimeout(async () => {
+        try {
+          console.log('Reading clipboard text for paste event...')
+          const text = await navigator.clipboard.readText()
+          console.log('Clipboard text for paste:', text)
+          
+          if (text) {
+            console.log('Sending clipboard-pasted message with content:', text)
+            sendMessage('clipboard-pasted', { content: text })
+            console.log('Paste message sent successfully')
+          } else {
+            console.log('No text in clipboard for paste')
+          }
+        } catch (error) {
+          console.error('Failed to read clipboard for paste event:', error)
+          
+          // If we get a permission error, update our permission status
+          if (error instanceof DOMException && error.name === 'NotAllowedError') {
+            console.log('Permission denied for paste, updating status')
+            hasClipboardPermission = false
+          }
+        }
+      }, 100)
     } catch (error) {
-      console.error('Failed to read clipboard:', error)
-      
-      // If we get a permission error, update our permission status
-      if (error instanceof DOMException && error.name === 'NotAllowedError') {
-        hasClipboardPermission = false
-        await permissionManager.resetPermissionStatus()
-      }
+      console.error('Failed to handle paste event:', error)
     }
   })
 
